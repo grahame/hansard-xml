@@ -1,11 +1,10 @@
 #!./venv/bin/python
 
-import requests, urllib, os, time
+import requests, urllib, os, time, re
 import lxml, lxml.etree, json, sys
 from lxml import etree
 from io import BytesIO
 from hashlib import sha1
-from pprint import pprint
 
 retries = 5
 def wrapped_get(s, *args, **kwargs):
@@ -109,10 +108,15 @@ class ParlInfoQuery:
             self.save()
 
     def get_check_uris(self):
+        get_uri = re.compile(r'^.*query=Id:\"([^\"]+)\"')
         docname_uri = {}
         for uri in sorted(self.result_pages):
             unescp_uri = urllib.parse.unquote(uri)
-            docname = unescp_uri.split('/')[-2]
+            m = get_uri.match(unescp_uri)
+            if not m:
+                raise Exception("eep: ", uri)
+            obj_id = m.groups()[0]
+            docname = obj_id.rsplit('/', 1)[0]
             if docname not in docname_uri:
                 docname_uri[docname] = uri
         return docname_uri.values()
@@ -126,11 +130,7 @@ def check_uri_for_xml(s, uri):
                     return 'http://parlinfo.aph.gov.au' + href
                 return href
     r = wrapped_get(s, uri, stream=False)
-    x = get_xml_uri(r.content)
-    if x is None:
-        sys.stdout.write("\n%s : %s\n" % (r.status_code, repr(r.content[:100])))
-        sys.stdout.flush()
-    return x
+    return get_xml_uri(r.content)
 
 class XmlUriFind:
     def __init__(self, check_uris):
@@ -143,7 +143,6 @@ class XmlUriFind:
 
     def update(self, retry=False):
         try:
-            pprint(self.xml_for_uri)
             to_check = [ t for t in self.check_uris if (t not in self.xml_for_uri) or (retry and self.xml_for_uri.get(t) == None) ]
             s = requests.Session()
             total = len(to_check)
