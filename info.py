@@ -1,4 +1,4 @@
-#!./venv/bin/python
+#!./venv/bin/python3.3
 
 import json, sys
 from lxml import etree
