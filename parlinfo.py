@@ -195,7 +195,6 @@ class XmlFetcher:
     def update(self):
         def get_fnames(info):
             p = urllib.parse.urlparse(info['xml_uri'])
-            assert(info['pdf_uri'] != None)
             uri_namepart = urllib.parse.unquote(p.path).split('/')[-1]
             uniq = sha1(info['xml_uri'].encode('utf8')).hexdigest()
             uniqd = os.path.join('xml', uniq)
