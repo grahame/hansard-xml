@@ -6,6 +6,12 @@ from lxml import etree
 from io import BytesIO
 from hashlib import sha1
 
+def safe_mkdir(p):
+    try:
+        os.mkdir(p)
+    except FileExistsError:
+        return
+
 retries = 5
 def wrapped_get(s, *args, **kwargs):
     exc = None
@@ -121,66 +127,95 @@ class ParlInfoQuery:
                 docname_uri[docname] = uri
         return docname_uri.values()
 
-def check_uri_for_xml(s, uri):
-    def get_xml_uri(data):
-        p = etree.parse(BytesIO(data), parser=etree.HTMLParser())
-        for href in (t.get('href') for t in p.xpath('//a')):
+class ResultUriInfo:
+    def __init__(self, s, uri):
+        r = wrapped_get(s, uri, stream=False)
+        et = etree.parse(BytesIO(r.content), parser=etree.HTMLParser())
+        self.uri = uri
+        self.xml_uri = self.get_xml_uri(et)
+        self.pdf_uri = self.get_pdf_uri(et)
+
+    def has_xml(self):
+        return self.xml_uri is not None
+
+    def json(self):
+        return {
+            'uri' : self.uri,
+            'xml_uri' : self.xml_uri,
+            'pdf_uri' : self.pdf_uri
+        }
+
+    def get_xml_uri(self, et):
+        for href in (t.get('href') for t in et.xpath('//a')):
             if href is not None and href.find('fileType=text%2Fxml') != -1:
                 if href.startswith('/'):
                     return 'http://parlinfo.aph.gov.au' + href
                 return href
-    r = wrapped_get(s, uri, stream=False)
-    return get_xml_uri(r.content)
+
+    def get_pdf_uri(self, et):
+        for href in (t.get('href') for t in et.xpath('//a')):
+            if href is not None and href.find('fileType=application%2Fpdf') != -1 and href.find('hansard_frag.pdf') == -1:
+                if href.startswith('/'):
+                    return 'http://parlinfo.aph.gov.au' + href
+                return href
 
 class XmlUriFind:
     def __init__(self, check_uris):
         self.check_uris = check_uris
         self.state_file = 'state/parlinfo_xml.json'
-        self.xml_for_uri = load_state(self.state_file)
+        self.result_info_for_uri = load_state(self.state_file)
 
     def save(self):
-        save_state(self.state_file, self.xml_for_uri)
+        save_state(self.state_file, self.result_info_for_uri)
 
     def update(self, retry=False):
         try:
-            to_check = [ t for t in self.check_uris if (t not in self.xml_for_uri) or (retry and self.xml_for_uri.get(t) == None) ]
+            to_check = [ t for t in self.check_uris if (t not in self.result_info_for_uri) or (retry and self.result_info_for_uri.get(t) == None) ]
             s = requests.Session()
             total = len(to_check)
             for i, uri in enumerate(sorted(to_check)):
                 sys.stdout.write("[{}/{}] getting: {} ".format(i+1, total, uri))
                 sys.stdout.flush()
-                x = check_uri_for_xml(s, uri)
-                self.xml_for_uri[uri] = x
-                if x is not None:
+                info = ResultUriInfo(s, uri)
+                self.result_info_for_uri[uri] = info.json()
+                if info.has_xml():
                     sys.stdout.write("... found.\n")
                 else:
                     sys.stdout.write("... no XML.\n")
         finally:
             self.save()
 
-    def get_xml_uris(self):
-        return list(filter(None, self.xml_for_uri.values()))
+    def get_result_info(self):
+        return list(filter(lambda t: t['xml_uri'] != None, self.result_info_for_uri.values()))
 
 class XmlFetcher:
-    def __init__(self, xml_uris):
-        self.xml_uris = xml_uris
+    def __init__(self, result_info):
+        self.result_info = result_info
     
     def update(self):
-        def get_fname(uri):
-            p = urllib.parse.urlparse(uri)
+        def get_fnames(info):
+            p = urllib.parse.urlparse(info['xml_uri'])
+            assert(info['pdf_uri'] != None)
             uri_namepart = urllib.parse.unquote(p.path).split('/')[-1]
-            uniq = sha1(uri.encode('utf8')).hexdigest()[:8]
-            return 'xml/{}_{}'.format(uniq, uri_namepart)
+            uniq = sha1(info['xml_uri'].encode('utf8')).hexdigest()
+            uniqd = os.path.join('xml', uniq)
+            safe_mkdir(uniqd)
+            return (
+                os.path.join(uniqd, uri_namepart),
+                os.path.join(uniqd, "info.json"))
 
-        with_fname = [ (t, get_fname(t)) for t in self.xml_uris ]
+        with_fname = [ (t,) + get_fnames(t) for t in self.result_info ]
         to_get = [ t for t in with_fname if not os.access(t[1], os.R_OK) ]
 
         s = requests.Session()
         nget = len(to_get)
-        for i, (uri, fname) in enumerate(sorted(to_get)):
+        for i, (info, fname, info_fname) in enumerate(to_get):
+            uri = info['xml_uri']
             sys.stdout.write("[{}/{}] getting: {} ".format(i+1, nget, uri))
             sys.stdout.flush()
             r = wrapped_get(s, uri, stream=False)
+            with open(info_fname, 'w') as fd:
+                json.dump(info, fd)
             tmpf = fname + '.tmp'
             with open(tmpf, 'wb') as fd:
                 fd.write(r.content)
@@ -207,6 +242,6 @@ if __name__ == '__main__':
         check_uris = check_uris.union(set(q.get_check_uris()))
     scanner = XmlUriFind(list(check_uris))
     scanner.update(retry=args.retryxml)
-    fetcher = XmlFetcher(scanner.get_xml_uris())
+    fetcher = XmlFetcher(scanner.get_result_info())
     fetcher.update()
 
