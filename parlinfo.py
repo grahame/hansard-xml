@@ -199,26 +199,26 @@ class XmlFetcher:
             uniq = sha1(info['xml_uri'].encode('utf8')).hexdigest()
             uniqd = os.path.join('xml', uniq)
             safe_mkdir(uniqd)
-            return (
-                os.path.join(uniqd, uri_namepart),
-                os.path.join(uniqd, "info.json"))
+            return (uniqd, uri_namepart)
 
         with_fname = [ (t,) + get_fnames(t) for t in self.result_info ]
-        to_get = [ t for t in with_fname if not os.access(t[1], os.R_OK) ]
+        to_get = [ t for t in with_fname if not os.access(os.path.join(*(t[1])), os.R_OK) ]
 
         s = requests.Session()
         nget = len(to_get)
-        for i, (info, fname, info_fname) in enumerate(to_get):
+        for i, (info, dirname, fname) in enumerate(to_get):
             uri = info['xml_uri']
             sys.stdout.write("[{}/{}] getting: {} ".format(i+1, nget, uri))
             sys.stdout.flush()
             r = wrapped_get(s, uri, stream=False)
-            with open(info_fname, 'w') as fd:
+            info = info.copy()
+            info['fname'] = fname
+            with open(os.path.join(dirname, 'info.json'), 'w') as fd:
                 json.dump(info, fd)
-            tmpf = fname + '.tmp'
+            tmpf = os.path.join(dirname, fname + '.tmp')
             with open(tmpf, 'wb') as fd:
                 fd.write(r.content)
-            os.rename(tmpf, fname)
+            os.rename(tmpf, os.path.join(dirname, fname))
             sys.stdout.write("... OK\n")
             sys.stdout.flush()
 
