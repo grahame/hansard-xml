@@ -1,4 +1,4 @@
-#!./venv/bin/python3.3
+#!/usr/bin/env python3
 
 import requests, urllib, os, time, re
 import lxml, lxml.etree, json, sys
@@ -232,7 +232,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     queries = {
         'hansardr' : "(Dataset:hansardr)",
-        'hansards' : "(Dataset:hansards)"
+        'hansards' : "(Dataset:hansards)",
+        'hansardr80' : "(Dataset:hansardr80)",        
+        'hansards80' : "(Dataset:hansards80)"
     }
     check_uris = set()
     for qname in args.queries:
