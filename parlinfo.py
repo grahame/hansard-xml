@@ -12,6 +12,12 @@ def safe_mkdir(p):
     except FileExistsError:
         return
 
+def response_okay(r):
+    # APH doesn't always return proper HTTP errors, just random HTML with code 200
+    if r.content.find(b'<title>ParlInfo - Unexpected Error</title>') != -1:
+        return False
+    return r.status_code == 200
+
 retries = 5
 def wrapped_get(s, *args, **kwargs):
     exc = None
@@ -93,6 +99,8 @@ class ParlInfoQuery:
                 sys.stdout.write("[page{}] getting: {} ".format(page, uri))
                 sys.stdout.flush()
                 r = wrapped_get(s, uri, stream=False)
+                if not response_okay(r):
+                    raise Exception("unable to get parlinfo query page")
                 added = 0
                 nresults = 0
                 for title, result_page in parse_rss(r.content):
@@ -130,6 +138,8 @@ class ParlInfoQuery:
 class ResultUriInfo:
     def __init__(self, s, uri):
         r = wrapped_get(s, uri, stream=False)
+        if not response_okay(r):
+            raise Exception("unable to get result URL info")
         et = etree.parse(BytesIO(r.content), parser=etree.HTMLParser())
         self.uri = uri
         self.xml_uri = self.get_xml_uri(et)
@@ -211,6 +221,8 @@ class XmlFetcher:
             sys.stdout.write("[{}/{}] getting: {} ".format(i+1, nget, uri))
             sys.stdout.flush()
             r = wrapped_get(s, uri, stream=False)
+            if not response_okay(r):
+                raise Exception("unable to get XML file")
             info = info.copy()
             info['fname'] = fname
             with open(os.path.join(dirname, 'info.json'), 'w') as fd:
