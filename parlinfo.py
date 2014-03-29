@@ -98,9 +98,8 @@ class ParlInfoQuery:
                 uri = self.get_uri(page)
                 sys.stdout.write("[page{}] getting: {} ".format(page, uri))
                 sys.stdout.flush()
+                # running off the end of APH RSS just returns an error page, which won't parse.. safe
                 r = wrapped_get(s, uri, stream=False)
-                if not response_okay(r):
-                    raise Exception("unable to get parlinfo query page")
                 added = 0
                 nresults = 0
                 for title, result_page in parse_rss(r.content):
