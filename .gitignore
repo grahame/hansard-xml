@@ -1,5 +1,6 @@
 state/
 venv/
+xml/
 .*swp
 *.pyc
 *.pyo
