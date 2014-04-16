@@ -210,10 +210,13 @@ class XmlFetcher:
             safe_mkdir(uniqd)
             return (uniqd, uri_namepart)
 
-        with_fname = [ (t,) + get_fnames(t) for t in self.result_info ]
-        to_get = [ t for t in with_fname if not os.access(os.path.join(*(t[1])), os.R_OK) ]
+        def work():
+            for info, dirname, fname in ((t,) + get_fnames(t) for t in self.result_info):
+                if not os.access(os.path.join(dirname, fname), os.R_OK):
+                    yield info, dirname, fname
 
         s = requests.Session()
+        to_get = list(work())
         nget = len(to_get)
         for i, (info, dirname, fname) in enumerate(to_get):
             uri = info['xml_uri']
